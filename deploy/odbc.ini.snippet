@@ -1,0 +1,11 @@
+# Añadir al FINAL de /etc/odbc.ini (nombre del DSN debe coincidir con SYBASE_DSN en .env, ej. SAP_ASE).
+# Ajusta Server, Port y Database a tu entorno ASE.
+
+[SAP_ASE]
+Driver=FreeTDS
+Server=10.1.6.234
+Port=4901
+# Opcional pero recomendable si ASE exige base por defecto:
+# Database=TU_BASE_SAP
+TDS_Version=5.0
+# Cifrado / charset según política del servidor (ver documentación FreeTDS).

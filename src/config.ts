@@ -4,10 +4,18 @@ dotenv.config();
 
 type SapSourceMode = "rfc" | "rest" | "sybase";
 
+const normalizeApiBasePath = (value: string | undefined): string => {
+  if (!value?.trim()) return "";
+  const trimmed = value.trim().replace(/\/+$/, "");
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+};
+
 interface AppConfig {
   nodeEnv: string;
   logLevel: string;
   port: number;
+  /** Prefijo HTTP (ej. /ordenes-produccion) para no chocar con otro backend en el mismo host/proxy */
+  apiBasePath: string;
   syncTable: string;
   syncBatchSize: number;
   syncConflictKeys: string[];
@@ -79,6 +87,7 @@ export const config: AppConfig = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   logLevel: process.env.LOG_LEVEL ?? "info",
   port: parseNumber(process.env.PORT, 3000),
+  apiBasePath: normalizeApiBasePath(process.env.API_BASE_PATH),
   syncTable: process.env.SYNC_TABLE ?? "ordenes_produccion",
   syncBatchSize: parseNumber(process.env.SYNC_BATCH_SIZE, 500),
   syncConflictKeys: parseConflictKeys(process.env.SYNC_CONFLICT_KEYS),

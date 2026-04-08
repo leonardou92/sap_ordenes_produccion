@@ -200,6 +200,11 @@ export class SapService {
       return (rows as SapRecord[]) ?? [];
     } catch (error) {
       logger.error({ err: error }, "Error consultando SAP Sybase por ODBC");
+      const errAny = error as { message?: string; odbcErrors?: { message?: string }[] };
+      const detail = errAny.odbcErrors?.map((e) => e.message?.trim()).filter(Boolean).join(" ");
+      if (detail) {
+        throw new Error(`${errAny.message ?? "ODBC"}: ${detail}`);
+      }
       throw error;
     } finally {
       if (connection) {

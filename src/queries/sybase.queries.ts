@@ -60,5 +60,5 @@ WHERE
     ${werks ? `AND ordenesResumen.WERKS = '${werks}'` : ""}
 ORDER BY
     ordenesResumen.AUFNR ASC,
-    ordenesDetalles.POSNR ASC;
+    ordenesDetalles.POSNR ASC
 `;

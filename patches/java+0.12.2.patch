@@ -1,0 +1,25 @@
+diff --git a/node_modules/java/find_java_libdir.sh b/node_modules/java/find_java_libdir.sh
+index 0407c39..90441ba 100755
+--- a/node_modules/java/find_java_libdir.sh
++++ b/node_modules/java/find_java_libdir.sh
+@@ -23,15 +23,17 @@ main () {
+   fi
+ 
+   local jre_dir
+-  if [[ "${java_version}" =~ (6|7|8) ]]; then
++  # Usar igualdad: =~ (6|7|8) coincide con el "7" dentro de "17" en bash.
++  if [[ "${java_version}" == "6" || "${java_version}" == "7" || "${java_version}" == "8" ]]; then
+     jre_dir="${java_home}/jre/lib"
+   else
+     jre_dir="${java_home}/lib"
+   fi
+ 
+   local lib_dir=""
+-  if [[ "${os}" == "linux" && ! "${java_version}" =~ (6|7|8) ]]; then
+-    # no arch on JDK 9+
++  # No usar =~ (6|7|8): en bash coincide con el "7" dentro de "17".
++  if [[ "${os}" == "linux" && "${java_version}" != "6" && "${java_version}" != "7" && "${java_version}" != "8" ]]; then
++    # JDK 9+: libjvm en $JAVA_HOME/lib/server (sin subdirectorio amd64)
+     lib_dir="${jre_dir}/server"
+   elif [[ "${os}" == "linux" && "${target_arch}" == "arm" ]]; then
+     if [[ -d ${jre_dir}/arm/classic ]]; then lib_dir="${jre_dir}"/arm/classic; else lib_dir="${jre_dir}"/arm/server; fi
