@@ -1,0 +1,25 @@
+# =============================================================================
+# Crontab: sincronizar ordenes_produccion (SAP -> SQL Server)
+# -----------------------------------------------------------------------------
+# La fecha inicial del rango SAP (ERDAT) viene de .env: SYNC_ERDAT_FROM=YYYY-MM-DD
+# Cada ejecución sincroniza [SYNC_ERDAT_FROM .. hoy UTC] (ver src/sync.ts).
+#
+# Instalación (usuario que corre el sync, ej. adminsara):
+#   chmod +x /var/www/html/sap_ordenes_produccion/deploy/sap-sync-cron.sh
+#   crontab -e
+# =============================================================================
+
+SHELL=/bin/bash
+HOME=/home/adminsara
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Hora del job en Venezuela (por si el servidor cambia de zona):
+CRON_TZ=America/Caracas
+
+# --- Activo: una sola vez al día, 4:37 p.m. Venezuela (16:37, CRON_TZ abajo) ---
+37 16 * * * /var/www/html/sap_ordenes_produccion/deploy/sap-sync-cron.sh >> /var/www/html/sap_ordenes_produccion/logs/cron-sync.log 2>&1
+
+# --- Otras recurrencias (comentadas) ----------------------------------------
+# Cada 15 minutos:
+# */15 * * * * /var/www/html/sap_ordenes_produccion/deploy/sap-sync-cron.sh >> /var/www/html/sap_ordenes_produccion/logs/cron-sync.log 2>&1
+# Cada 30 minutos:
+# */30 * * * * /var/www/html/sap_ordenes_produccion/deploy/sap-sync-cron.sh >> /var/www/html/sap_ordenes_produccion/logs/cron-sync.log 2>&1

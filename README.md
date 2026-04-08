@@ -21,21 +21,84 @@ Backend en Node.js + TypeScript para consultar ordenes de produccion desde SAP S
 4. **JDBC (opcional):**
    - `export JAVA_HOME=/ruta/al/jdk-17` y `npm rebuild java` solo con Node 18.
 
-## Variables de entorno relevantes (API y red)
+## Configuracion completa (guía; sin datos reales)
 
-Definidas en `.env.example` (valores reales solo en tu `.env` local):
+Usa **solo placeholders** (`TU_HOST`, `TU_USUARIO`, etc.) en tickets y documentación. Los valores productivos viven **únicamente** en `.env` fuera del repo.
 
-| Variable | Descripcion |
-|----------|-------------|
-| `PORT` | Puerto donde escucha Express (ej. `3001` si otro backend usa `3000`). |
-| `API_BASE_PATH` | Prefijo de URL (ej. `/ordenes-produccion`). La API queda en `{API_BASE_PATH}/api/...`. |
-| `SAP_SOURCE_MODE` | `sybase` para consultas directas ASE. |
-| `SYBASE_CONNECTION_MODE` | `odbc` o `jdbc`. |
-| `SYBASE_DSN` | Nombre del DSN en `odbc.ini` (debe coincidir). |
-| `SYBASE_SERVER`, `SYBASE_PORT` | Host y puerto ASE (tambien usados en modo sin DSN). |
-| `SYBASE_UID`, `SYBASE_PWD` | Credenciales SAP (solo en `.env`, no en documentacion con valores reales). |
-| `SYBASE_DB` | Base por defecto si tu ASE lo exige. |
-| `JVM_PATH` | Ruta a `lib/server` del JDK (JDBC). |
+### 1) Archivo `.env`
+
+```bash
+cp .env.example .env
+```
+
+Bloques que debes rellenar (detalle en `.env.example`):
+
+| Bloque | Propósito |
+|--------|-----------|
+| **App + API** | `PORT`, `API_BASE_PATH`, `LOG_LEVEL`, `NODE_ENV`. |
+| **Sync** | `SYNC_TABLE` (destino en SQL Server, p. ej. `ordenes_produccion`), `SYNC_ERDAT_FROM` (inicio del rango ERDAT SAP `YYYY-MM-DD`; cada corrida llega hasta hoy UTC), `SYNC_WERKS` opcional, `SYNC_BATCH_SIZE`, `SYNC_CONFLICT_KEYS`. |
+| **Sybase ASE** | `SYBASE_CONNECTION_MODE` (`odbc` o `jdbc`), DSN / servidor / puerto / credenciales. El flujo de órdenes por rango usa **siempre** consulta ASE (ver sección ODBC más abajo). |
+| **SQL Server (Knex)** | `DB_*` para el upsert del sync (host, puerto, base, usuario, contraseña, `DB_ENCRYPT`, `DB_TRUST_SERVER_CERTIFICATE`, pool). |
+| **Prisma** | `DATABASE_URL` para `npx prisma migrate deploy` y `prisma generate` (misma instancia SQL Server que suelas usar con Knex). |
+
+**Notas:**
+
+- Si `DATABASE_URL` ya está **exportada en el shell** (p. ej. en CI o un perfil con `%21` en la contraseña), `dotenv` puede no pisarla: para comandos Prisma usa `env -u DATABASE_URL npx prisma ...` o quita el export.
+- En la cadena Prisma, caracteres como `!` en la contraseña suelen ir **literales** entre comillas en `.env`; evita copiar versiones codificadas que el cliente envíe tal cual al motor.
+- La aplicación carga `.env` con **prioridad sobre variables ya definidas** en el entorno (`override`), para que el archivo sea la referencia en servidor.
+
+### 2) Compilación y sync manual
+
+```bash
+nvm use    # o Node 18 según .nvmrc
+npm install
+npm run build
+npm run start   # una corrida del sync: SAP (Sybase) → tabla configurada en SYNC_TABLE
+```
+
+Comprueba logs en consola (JSON con pino). Si falta `dist/`, ejecuta antes `npm run build`.
+
+### 3) SQL Server: esquema y migraciones
+
+En una **base compartida** con otras tablas **no uses** `prisma db push`: podría alinear todo el esquema al `schema.prisma` y sugerir eliminar tablas que no están modeladas.
+
+Flujo recomendado:
+
+1. Revisar migraciones en `prisma/migrations/`.
+2. Primera vez en un servidor ya con otras tablas (error tipo “schema not empty” / baseline): seguir comentarios en `.env.example` y scripts en `package.json` (`prisma:sql:apply`, `prisma:baseline:init`, `prisma:deploy`) según tu caso.
+3. Cambios posteriores: `env -u DATABASE_URL npm run prisma:deploy` (y `npm run prisma:generate` si cambia el cliente).
+
+DDL **solo** de la tabla destino (entorno aislado / referencia): `deploy/sql-server-ordenes_produccion.sql` (sin credenciales). Notas de cambios de esquema: `deploy/sql-server-sap_ordenes_produccion_lines_upgrade_note.txt`.
+
+### 4) Upsert en Microsoft SQL Server
+
+Knex **no** implementa `.onConflict().merge()` en el dialecto `mssql`. El proyecto usa `MERGE` T‑SQL por lotes en `DatabaseService` para el sync.
+
+### 5) Sincronización automática (cron)
+
+1. Dar permiso de ejecución: `chmod +x deploy/sap-sync-cron.sh`
+2. Asegurar que el usuario del cron tenga `HOME` correcto (necesario para **nvm**) y, si aplica, `PATH` mínimo.
+3. Instalar crontab con `crontab -e`. Plantilla **sin datos sensibles**: `deploy/sap-sync.cron.example`
+
+Incluye normalmente:
+
+- `SHELL=/bin/bash`
+- `HOME=/home/TU_USUARIO_LINUX`
+- `PATH=...` (rutas estándar del sistema)
+- `CRON_TZ=America/Caracas` si quieres fijar la hora en Venezuela aunque cambie la zona del servidor
+- **Una sola** línea de horario, por ejemplo una vez al día a las 4:37 p.m. hora Caracas: minuto `37`, hora `16` → `37 16 * * *` seguido de la ruta absoluta al script y redirección a `logs/cron-sync.log`
+
+El script:
+
+- Activa nvm de forma segura bajo `cron`, comprueba `node`, opcionalmente ejecuta `npm run build` si no existe `dist/sync.js`, usa `flock` si está disponible y escribe trazas al log.
+
+### 6) API y proxy inverso
+
+Consistencia: el `PORT` y `API_BASE_PATH` del `.env` deben coincidir con lo que configuraste en Apache/Nginx (ver más abajo **Apache en el mismo servidor**).
+
+## Variables de entorno (resumen)
+
+La lista canónica y los comentarios están en **`.env.example`** (valores de ejemplo genéricos). No repetir contraseñas ni hosts reales en el README ni en issues públicos.
 
 ## Ejecucion
 
@@ -189,6 +252,8 @@ Las consultas enviadas por este driver **no deben terminar en punto y coma** (`;
 | El navegador recibe HTML del SPA en la ruta de la API | Falta regla de proxy **antes** del fallback SPA (ver `deploy/`). |
 | Error nativo `java` / NAN en Node 22 | Usar Node 18 LTS (`nvm use`). |
 | `cannot find -ljvm` al compilar `java` | Definir `JAVA_HOME`; ver parche + `find_java_libdir` en `patches/java+*.patch`. |
+| Sync por **cron** no hace nada / termina al instante | Ver `logs/cron-sync.log`: falta `HOME` para nvm, `node` fuera del `PATH`, o fallo previo de `source nvm.sh` con `set -e` (el script del repo mitiga esto). Comprobar `crontab -l` y zona `CRON_TZ` si aplica. |
+| Sync corre pero **no escribe** en SQL Server | Comprobar `SYNC_TABLE`, credenciales `DB_*`, y que exista la tabla en el destino (migraciones). Revisar logs de error del `MERGE` (Knex no usa `onConflict` en MSSQL; el código usa `MERGE`). |
 
 ## Seguridad
 

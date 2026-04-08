@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:deploy": "prisma migrate deploy"
+    "prisma:deploy": "prisma migrate deploy",
+    "prisma:sql:apply": "prisma db execute --file prisma/migrations/20260408140000_init_sap_ordenes_tables/migration.sql --schema prisma/schema.prisma && prisma db execute --file prisma/migrations/20260408160000_rename_to_ordenes_produccion/migration.sql --schema prisma/schema.prisma",
+    "prisma:baseline:init": "prisma migrate resolve --applied 20260408140000_init_sap_ordenes_tables"
   },
   "keywords": [
     "sap",

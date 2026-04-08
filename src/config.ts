@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 
-dotenv.config();
+// .env manda sobre variables ya exportadas en el shell (cron tiene entorno mínimo).
+dotenv.config({ override: true });
 
 type SapSourceMode = "rfc" | "rest" | "sybase";
 
@@ -19,6 +20,10 @@ interface AppConfig {
   syncTable: string;
   syncBatchSize: number;
   syncConflictKeys: string[];
+  /** ERDAT desde (YYYY-MM-DD): ventana SAP [desde, hoy UTC] en cada corrida de sync. */
+  syncErdatFrom: string;
+  /** Opcional: filtro WERKS (centro), ej. PB00. */
+  syncWerks: string | undefined;
   sap: {
     sourceMode: SapSourceMode;
     timeoutMs: number;
@@ -75,9 +80,13 @@ const parseBoolean = (value: string | undefined, fallback = false): boolean => {
   return value.toLowerCase() === "true";
 };
 
-const parseConflictKeys = (value: string | undefined): string[] => {
-  if (!value) return ["id"];
-  return value
+const parseConflictKeys = (
+  value: string | undefined,
+  fallback: string
+): string[] => {
+  const trimmed = value?.trim();
+  if (!trimmed) return [fallback];
+  return trimmed
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
@@ -88,9 +97,15 @@ export const config: AppConfig = {
   logLevel: process.env.LOG_LEVEL ?? "info",
   port: parseNumber(process.env.PORT, 3000),
   apiBasePath: normalizeApiBasePath(process.env.API_BASE_PATH),
-  syncTable: process.env.SYNC_TABLE ?? "ordenes_produccion",
+  syncTable:
+    process.env.SYNC_TABLE ?? "ordenes_produccion",
   syncBatchSize: parseNumber(process.env.SYNC_BATCH_SIZE, 500),
-  syncConflictKeys: parseConflictKeys(process.env.SYNC_CONFLICT_KEYS),
+  syncConflictKeys: parseConflictKeys(
+    process.env.SYNC_CONFLICT_KEYS,
+    "sap_line_id"
+  ),
+  syncErdatFrom: (process.env.SYNC_ERDAT_FROM ?? "").trim(),
+  syncWerks: process.env.SYNC_WERKS?.trim() || undefined,
   sap: {
     sourceMode: (process.env.SAP_SOURCE_MODE as SapSourceMode) ?? "rest",
     timeoutMs: parseNumber(process.env.SAP_TIMEOUT_MS, 30000),

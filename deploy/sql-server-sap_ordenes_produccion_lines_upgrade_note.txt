@@ -1,0 +1,9 @@
+Si ya tenías sap_ordenes_produccion_lines SIN stat_sistema / estatus_*:
+- La clave sap_line_id cambió (ahora incluye STAT de JEST). Los PK antiguos no coinciden con los nuevos.
+- Opciones: (1) TRUNCATE TABLE y volver a correr npm run dev / sync, o (2) tabla nueva y swap de nombres.
+
+La tabla destino actual es dbo.ordenes_produccion. Si aún existe sap_ordenes_produccion_lines, aplica la migración Prisma
+20260408160000_rename_to_ordenes_produccion (npm run prisma:deploy) o el SQL equivalente con sp_rename.
+
+Tras cambios de columnas: en BD compartida usar migraciones Prisma (npm run prisma:sql:apply / prisma:deploy) o SQL manual; no uses prisma db push.
+DDL solo de esta tabla en entorno aislado: deploy/sql-server-ordenes_produccion.sql

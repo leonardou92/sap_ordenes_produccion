@@ -3,6 +3,12 @@ import { config } from "../config";
 import { logger } from "../utils/logger";
 import { SapRecord } from "./sap.service";
 
+const assertSafeSqlIdentifier = (name: string, label: string): void => {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`${label} inválido para SQL Server: ${name}`);
+  }
+};
+
 export class DatabaseService {
   private readonly db: Knex;
 
@@ -47,15 +53,105 @@ export class DatabaseService {
     if (rows.length === 0) return 0;
 
     try {
+      if (config.db.client === "mssql") {
+        return await this.bulkUpsertMssql(
+          tableName,
+          rows as Record<string, unknown>[],
+          conflictKeys
+        );
+      }
+
       await this.db(tableName).insert(rows).onConflict(conflictKeys).merge();
       return rows.length;
     } catch (error) {
+      const message =
+        error instanceof Error ? error.message : String(error);
       logger.error(
-        { error, tableName, conflictKeys, rows: rows.length },
+        {
+          errMessage: message,
+          errStack: error instanceof Error ? error.stack : undefined,
+          tableName,
+          conflictKeys,
+          rows: rows.length
+        },
         "Error al ejecutar bulk upsert"
       );
       throw error;
     }
+  }
+
+  /** Knex no implementa onConflict/merge en MSSQL; se usa MERGE nativo. */
+  private escapeMssqlScalar(value: unknown): string {
+    if (value === null || value === undefined) {
+      return "NULL";
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+    if (typeof value === "boolean") {
+      return value ? "1" : "0";
+    }
+    if (value instanceof Date) {
+      const iso = value.toISOString().replace("T", " ").replace("Z", "");
+      return `CAST(N'${iso}' AS DATETIME2(3))`;
+    }
+    if (typeof value === "string") {
+      return `N'${value.replace(/'/g, "''")}'`;
+    }
+    return `N'${String(value).replace(/'/g, "''")}'`;
+  }
+
+  private async bulkUpsertMssql(
+    tableName: string,
+    rows: Record<string, unknown>[],
+    conflictKeys: string[]
+  ): Promise<number> {
+    assertSafeSqlIdentifier(tableName, "tabla");
+    const columns = Object.keys(rows[0]);
+    for (const c of columns) {
+      assertSafeSqlIdentifier(c, "columna");
+    }
+    for (const k of conflictKeys) {
+      assertSafeSqlIdentifier(k, "conflictKey");
+      if (!columns.includes(k)) {
+        throw new Error(`conflictKey ${k} no está en las filas`);
+      }
+    }
+
+    const bracket = (id: string): string => `[${id}]`;
+    const updateCols = columns.filter((c) => !conflictKeys.includes(c));
+    if (updateCols.length === 0) {
+      throw new Error("No hay columnas para UPDATE en bulk upsert");
+    }
+
+    const valueTuples = rows.map(
+      (row) =>
+        `(${columns.map((c) => this.escapeMssqlScalar(row[c])).join(", ")})`
+    );
+
+    const colList = columns.map(bracket).join(", ");
+    const onClause = conflictKeys
+      .map((k) => `target.${bracket(k)} = source.${bracket(k)}`)
+      .join(" AND ");
+    const updateSet = updateCols
+      .map((c) => `target.${bracket(c)} = source.${bracket(c)}`)
+      .join(", ");
+    const insertCols = columns.map(bracket).join(", ");
+    const insertVals = columns.map((c) => `source.${bracket(c)}`).join(", ");
+
+    const sql = `
+MERGE ${bracket(tableName)} WITH (HOLDLOCK) AS target
+USING (
+  VALUES
+    ${valueTuples.join(",\n    ")}
+) AS source (${colList})
+ON ${onClause}
+WHEN MATCHED THEN UPDATE SET ${updateSet}
+WHEN NOT MATCHED BY TARGET THEN INSERT (${insertCols}) VALUES (${insertVals});
+`;
+
+    await this.db.raw(sql);
+    return rows.length;
   }
 
   public async findProductionOrdersByMonth(
