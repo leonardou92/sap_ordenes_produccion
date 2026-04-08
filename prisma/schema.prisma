@@ -1,0 +1,39 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlserver"
+  url      = env("DATABASE_URL")
+}
+
+model SyncLog {
+  id             BigInt   @id @default(autoincrement())
+  source         String   @default("SAP")
+  targetTable    String
+  batchSize      Int
+  totalProcessed Int
+  status         String
+  errorMessage   String?
+  startedAt      DateTime @default(now())
+  finishedAt     DateTime?
+
+  @@map("sync_logs")
+}
+
+model OrdenProduccion {
+  id           String   @id
+  numeroOrden  String?  @map("numero_orden")
+  centro       String?
+  material     String?
+  cantidadPlan Decimal? @map("cantidad_plan") @db.Decimal(18, 4)
+  unidadMedida String?  @map("unidad_medida")
+  fechaInicio  DateTime? @map("fecha_inicio")
+  fechaFin     DateTime? @map("fecha_fin")
+  estado       String?
+  payload      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("ordenes_produccion")
+}
