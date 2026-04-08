@@ -15,8 +15,14 @@ interface AppConfig {
   nodeEnv: string;
   logLevel: string;
   port: number;
+  /** Interfaz de escucha (0.0.0.0 por defecto; 127.0.0.1 si solo hay proxy en el mismo host). */
+  listenHost: string;
+  /** Tras proxy inverso: true o número de saltos (ver documentación Express trust proxy). */
+  trustProxy: boolean | number;
   /** Prefijo HTTP (ej. /ordenes-produccion) para no chocar con otro backend en el mismo host/proxy */
   apiBasePath: string;
+  /** GET consulta SAP por rango `.../api/ordenes-produccion`. `false` = ruta no registrada. */
+  enableOrdenesConsultaApi: boolean;
   syncTable: string;
   syncBatchSize: number;
   syncConflictKeys: string[];
@@ -80,6 +86,18 @@ const parseBoolean = (value: string | undefined, fallback = false): boolean => {
   return value.toLowerCase() === "true";
 };
 
+const parseTrustProxy = (
+  value: string | undefined
+): boolean | number | undefined => {
+  if (value === undefined || value.trim() === "") return undefined;
+  const v = value.trim().toLowerCase();
+  if (v === "true" || v === "1") return true;
+  if (v === "false" || v === "0") return false;
+  const n = Number(value);
+  if (Number.isInteger(n) && n >= 0) return n;
+  return undefined;
+};
+
 const parseConflictKeys = (
   value: string | undefined,
   fallback: string
@@ -96,7 +114,15 @@ export const config: AppConfig = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   logLevel: process.env.LOG_LEVEL ?? "info",
   port: parseNumber(process.env.PORT, 3000),
+  listenHost: (process.env.LISTEN_HOST ?? "0.0.0.0").trim() || "0.0.0.0",
+  trustProxy:
+    parseTrustProxy(process.env.TRUST_PROXY) ??
+    (process.env.NODE_ENV === "production" ? 1 : false),
   apiBasePath: normalizeApiBasePath(process.env.API_BASE_PATH),
+  enableOrdenesConsultaApi: parseBoolean(
+    process.env.ENABLE_ORDENES_CONSULTA_API,
+    false
+  ),
   syncTable:
     process.env.SYNC_TABLE ?? "ordenes_produccion",
   syncBatchSize: parseNumber(process.env.SYNC_BATCH_SIZE, 500),

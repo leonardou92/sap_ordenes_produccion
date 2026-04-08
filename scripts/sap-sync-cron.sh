@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Sincronización SAP → SQL Server (ordenes_produccion).
-# Rango ERDAT: SYNC_ERDAT_FROM → hoy UTC (desde .env vía dotenv en Node).
+# Sincronización SAP → SQL Server (tabla en SYNC_TABLE del .env).
+# Rango ERDAT: SYNC_ERDAT_FROM → hoy UTC (dotenv en Node).
 set -euo pipefail
 
-readonly PROJECT_ROOT="/var/www/html/sap_ordenes_produccion"
+readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly LOG_DIR="${PROJECT_ROOT}/logs"
 readonly LOCK_FILE="/tmp/sap-ordenes-sync.lock"
 
@@ -24,7 +24,6 @@ export NODE_ENV="${NODE_ENV:-production}"
 
 if [[ -s "${HOME}/.nvm/nvm.sh" ]]; then
   export NVM_DIR="${NVM_DIR:-${HOME}/.nvm}"
-  # Con set -e, source nvm.sh puede salir con código≠0 en entorno tipo cron; no abortar aquí.
   set +e
   # shellcheck source=/dev/null
   source "${HOME}/.nvm/nvm.sh"

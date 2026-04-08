@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { SapService } from "../services/sap.service";
 import { logger } from "../utils/logger";
+import { serializeError } from "../utils/serialize-error";
 
 const sapService = new SapService();
 
@@ -16,7 +17,8 @@ export const getOrdenesProduccionPorRango = async (
     if (!desde || !hasta) {
       res.status(400).json({
         ok: false,
-        msg: "Parámetros inválidos. Debes enviar desde y hasta (YYYY-MM-DD)."
+        msg: "Parámetros inválidos. Debes enviar desde y hasta (YYYY-MM-DD).",
+        requestId: req.requestId
       });
       return;
     }
@@ -26,9 +28,12 @@ export const getOrdenesProduccionPorRango = async (
       hasta,
       werks
     );
-    res.status(200).json({ ok: true, data });
+    res.status(200).json({ ok: true, data, requestId: req.requestId });
   } catch (error) {
-    logger.error({ err: error }, "Error obteniendo ordenes de produccion por rango");
+    logger.error(
+      { err: serializeError(error), requestId: req.requestId },
+      "Error obteniendo ordenes de produccion por rango"
+    );
     const statusCode =
       error instanceof Error &&
       (error.message.includes("inválido") ||
@@ -39,7 +44,8 @@ export const getOrdenesProduccionPorRango = async (
         : 500;
     res.status(statusCode).json({
       ok: false,
-      msg: error instanceof Error ? error.message : "Error interno del servidor"
+      msg: error instanceof Error ? error.message : "Error interno del servidor",
+      requestId: req.requestId
     });
   }
 };

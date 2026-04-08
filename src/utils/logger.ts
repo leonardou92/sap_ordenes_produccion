@@ -5,7 +5,7 @@ export const logger = pino({
   level: config.logLevel,
   timestamp: pino.stdTimeFunctions.isoTime,
   base: {
-    service: "sap-sql-sync",
+    service: "sap-ordenes-produccion",
     env: config.nodeEnv
   }
 });

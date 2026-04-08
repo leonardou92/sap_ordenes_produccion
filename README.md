@@ -35,7 +35,7 @@ Bloques que debes rellenar (detalle en `.env.example`):
 
 | Bloque | Propósito |
 |--------|-----------|
-| **App + API** | `PORT`, `API_BASE_PATH`, `LOG_LEVEL`, `NODE_ENV`. |
+| **App + API** | `PORT`, `LISTEN_HOST` (ej. `0.0.0.0` o `127.0.0.1`), `TRUST_PROXY` (`1`/`true` detrás de Apache/Nginx; `false` si accedes directo al puerto), `API_BASE_PATH`, `LOG_LEVEL`, `NODE_ENV`. |
 | **Sync** | `SYNC_TABLE` (destino en SQL Server, p. ej. `ordenes_produccion`), `SYNC_ERDAT_FROM` (inicio del rango ERDAT SAP `YYYY-MM-DD`; cada corrida llega hasta hoy UTC), `SYNC_WERKS` opcional, `SYNC_BATCH_SIZE`, `SYNC_CONFLICT_KEYS`. |
 | **Sybase ASE** | `SYBASE_CONNECTION_MODE` (`odbc` o `jdbc`), DSN / servidor / puerto / credenciales. El flujo de órdenes por rango usa **siempre** consulta ASE (ver sección ODBC más abajo). |
 | **SQL Server (Knex)** | `DB_*` para el upsert del sync (host, puerto, base, usuario, contraseña, `DB_ENCRYPT`, `DB_TRUST_SERVER_CERTIFICATE`, pool). |
@@ -68,7 +68,7 @@ Flujo recomendado:
 2. Primera vez en un servidor ya con otras tablas (error tipo “schema not empty” / baseline): seguir comentarios en `.env.example` y scripts en `package.json` (`prisma:sql:apply`, `prisma:baseline:init`, `prisma:deploy`) según tu caso.
 3. Cambios posteriores: `env -u DATABASE_URL npm run prisma:deploy` (y `npm run prisma:generate` si cambia el cliente).
 
-DDL **solo** de la tabla destino (entorno aislado / referencia): `deploy/sql-server-ordenes_produccion.sql` (sin credenciales). Notas de cambios de esquema: `deploy/sql-server-sap_ordenes_produccion_lines_upgrade_note.txt`.
+El DDL versionado está en **`prisma/migrations/`**. Si ya tenías una tabla antigua sin `stat_sistema` / estatus y cambió la forma de `sap_line_id`, puede hacer falta **TRUNCATE** y volver a sincronizar, o migrar con la migración `20260408160000_rename_to_ordenes_produccion` si aún existía el nombre viejo de tabla.
 
 ### 4) Upsert en Microsoft SQL Server
 
@@ -76,9 +76,9 @@ Knex **no** implementa `.onConflict().merge()` en el dialecto `mssql`. El proyec
 
 ### 5) Sincronización automática (cron)
 
-1. Dar permiso de ejecución: `chmod +x deploy/sap-sync-cron.sh`
+1. Dar permiso de ejecución: `chmod +x scripts/sap-sync-cron.sh`
 2. Asegurar que el usuario del cron tenga `HOME` correcto (necesario para **nvm**) y, si aplica, `PATH` mínimo.
-3. Instalar crontab con `crontab -e`. Plantilla **sin datos sensibles**: `deploy/sap-sync.cron.example`
+3. Instalar crontab con `crontab -e`. Plantilla con placeholders: **`scripts/sap-sync.cron.example`** (sustituye `RUTA_REPO` y `TU_USUARIO`).
 
 Incluye normalmente:
 
@@ -86,7 +86,7 @@ Incluye normalmente:
 - `HOME=/home/TU_USUARIO_LINUX`
 - `PATH=...` (rutas estándar del sistema)
 - `CRON_TZ=America/Caracas` si quieres fijar la hora en Venezuela aunque cambie la zona del servidor
-- **Una sola** línea de horario, por ejemplo una vez al día a las 4:37 p.m. hora Caracas: minuto `37`, hora `16` → `37 16 * * *` seguido de la ruta absoluta al script y redirección a `logs/cron-sync.log`
+- **Una sola** línea de horario, por ejemplo una vez al día a las 4:37 p.m. hora Caracas: minuto `37`, hora `16` → `37 16 * * *` seguido de la **ruta absoluta** a `scripts/sap-sync-cron.sh` y redirección a `logs/cron-sync.log` dentro del repo
 
 El script:
 
@@ -106,7 +106,16 @@ La lista canónica y los comentarios están en **`.env.example`** (valores de ej
 - Build: `npm run build`
 - Produccion (tras build): `npm run start:api`
 
-Mantén el proceso activo en el `PORT` configurado; si hay un proxy inverso (Apache/Nginx) hacia ese puerto, el servicio debe estar en marcha antes de probar la URL publica.
+Al arrancar, la API **valida** variables críticas (SQL Server, Sybase, puerto). El proceso responde a **SIGTERM/SIGINT** cerrando el servidor HTTP de forma ordenada (útil con systemd/Kubernetes).
+
+**Health checks** (con `API_BASE_PATH=/ordenes-produccion`):
+
+- `GET .../api/health` — liveness (sin I/O externo).
+- `GET .../api/health/ready` — readiness (prueba `SELECT 1` contra SQL Server).
+
+Las respuestas JSON incluyen `requestId` (también cabecera `X-Request-Id`) para correlacionar con logs.
+
+Mantén el proceso activo en el `PORT` configurado; si hay un proxy inverso (Apache/Nginx) hacia ese puerto, el servicio debe estar en marcha antes de probar la URL publica. Usa `TRUST_PROXY=1` en producción detrás de proxy.
 
 ## Endpoint principal
 
@@ -129,12 +138,32 @@ Con `API_BASE_PATH=/ordenes-produccion` y `PORT=3001`:
 
 ## Apache en el mismo servidor (SPA + esta API)
 
-Si el unico `VirtualHost` en el puerto 80 sirve un frontend React y reenvia rutas inexistentes a `index.html`, hay que enrutar **antes** el prefijo de esta API hacia Node (`ProxyPass` / `RewriteRule [P]`). Archivos de referencia **sin credenciales**:
+Si el unico `VirtualHost` en el puerto 80 sirve un frontend React y reenvia rutas inexistentes a `index.html`, hay que enrutar **antes** el prefijo de esta API hacia Node (`ProxyPass` / `RewriteRule [P]`). Ejemplo de `VirtualHost` (sustituye `TU_*` y el puerto por tu `PORT` / `API_BASE_PATH`):
 
-- `deploy/frontend-sara-with-api-proxy.conf` — ejemplo de VirtualHost con proxy a `127.0.0.1:PUERTO_NODE`
-- `deploy/enable-apache-proxy.sh` — script que hace backup y aplica la conf (requiere ejecutarlo con permisos de administrador en el servidor)
+```apache
+<VirtualHost *:80>
+    ServerName TU_DOMINIO_O_IP
+    DocumentRoot /var/www/html/TU_SPA/build
+    ProxyRequests Off
+    ProxyPreserveHost On
+    RewriteEngine On
+    RewriteRule ^/ordenes-produccion/(.*)$ http://127.0.0.1:3001/ordenes-produccion/$1 [P,L]
+    ProxyPassReverse /ordenes-produccion/ http://127.0.0.1:3001/ordenes-produccion/
+    <Directory "/var/www/html/TU_SPA/build">
+        Options Indexes FollowSymLinks
+        AllowOverride All
+        Require all granted
+        RewriteEngine On
+        RewriteBase /
+        RewriteRule ^index\.html$ - [L]
+        RewriteCond %{REQUEST_FILENAME} !-f
+        RewriteCond %{REQUEST_FILENAME} !-d
+        RewriteRule . /index.html [L]
+    </Directory>
+</VirtualHost>
+```
 
-Sustituye el puerto en el proxy por el valor de `PORT` en tu `.env`.
+`sudo a2enmod proxy proxy_http rewrite` y recarga de Apache tras `apache2ctl configtest`.
 
 ## Ubuntu: ODBC + FreeTDS (ASE)
 
@@ -192,7 +221,7 @@ Servername=sap_ase_odbc
 
 El nombre `sap_ase_odbc` debe coincidir con la seccion entre corchetes en `freetds.conf`. En `.env` usa el mismo nombre en `SYBASE_DSN=SAP_ASE` que la seccion `[SAP_ASE]` de `odbc.ini`.
 
-Opcion B — **Sistema**: mismas secciones en `/etc/freetds/freetds.conf` y `/etc/odbc.ini` (ver fragmentos en `deploy/freetds-sap-ase.snippet` y `deploy/odbc.ini.with-encryption.snippet`).
+Opcion B — **Sistema**: mismas secciones en `/etc/freetds/freetds.conf` y `/etc/odbc.ini` (el contenido es el de los bloques de arriba).
 
 Si `require` no encaja con tu politica de servidor, prueba `encryption = request`.
 
@@ -249,7 +278,7 @@ Las consultas enviadas por este driver **no deben terminar en punto y coma** (`;
 | Login encryption / encrypt password | Falta `encryption = require` (o `request`) en `freetds.conf` para la entrada usada por `Servername`. |
 | `Incorrect syntax near ';'` | Quitar `;` final del SQL enviado por ODBC. |
 | `503` vía Apache | Node no escucha en el `PORT` del proxy; arranca la API. |
-| El navegador recibe HTML del SPA en la ruta de la API | Falta regla de proxy **antes** del fallback SPA (ver `deploy/`). |
+| El navegador recibe HTML del SPA en la ruta de la API | Falta regla de proxy **antes** del fallback SPA (ver ejemplo Apache arriba). |
 | Error nativo `java` / NAN en Node 22 | Usar Node 18 LTS (`nvm use`). |
 | `cannot find -ljvm` al compilar `java` | Definir `JAVA_HOME`; ver parche + `find_java_libdir` en `patches/java+*.patch`. |
 | Sync por **cron** no hace nada / termina al instante | Ver `logs/cron-sync.log`: falta `HOME` para nvm, `node` fuera del `PATH`, o fallo previo de `source nvm.sh` con `set -e` (el script del repo mitiga esto). Comprobar `crontab -l` y zona `CRON_TZ` si aplica. |

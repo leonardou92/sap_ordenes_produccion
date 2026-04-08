@@ -1,6 +1,7 @@
 import knex, { Knex } from "knex";
 import { config } from "../config";
 import { logger } from "../utils/logger";
+import { serializeError } from "../utils/serialize-error";
 import { SapRecord } from "./sap.service";
 
 const assertSafeSqlIdentifier = (name: string, label: string): void => {
@@ -64,12 +65,9 @@ export class DatabaseService {
       await this.db(tableName).insert(rows).onConflict(conflictKeys).merge();
       return rows.length;
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : String(error);
       logger.error(
         {
-          errMessage: message,
-          errStack: error instanceof Error ? error.stack : undefined,
+          err: serializeError(error),
           tableName,
           conflictKeys,
           rows: rows.length
@@ -169,7 +167,13 @@ WHEN NOT MATCHED BY TARGET THEN INSERT (${insertCols}) VALUES (${insertVals});
       return rows as SapRecord[];
     } catch (error) {
       logger.error(
-        { error, tableName, dateColumn, startDate, endDate },
+        {
+          err: serializeError(error),
+          tableName,
+          dateColumn,
+          startDate,
+          endDate
+        },
         "Error consultando ordenes de produccion por mes"
       );
       throw error;

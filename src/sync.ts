@@ -1,9 +1,11 @@
+import { assertSyncConfig } from "./config-validation";
 import { config } from "./config";
 import { DatabaseService } from "./services/database.service";
 import { SapService } from "./services/sap.service";
 import { logger } from "./utils/logger";
 import { mapSapOrdenRowsToSql } from "./utils/sap-ordenes-sql.mapper";
 import type { SapRecord } from "./services/sap.service";
+import { serializeError } from "./utils/serialize-error";
 
 const chunkArray = <T>(items: T[], batchSize: number): T[][] => {
   const chunks: T[][] = [];
@@ -23,17 +25,19 @@ function todayYyyyMmDdUtc(): string {
 }
 
 const runSync = async (): Promise<void> => {
+  try {
+    assertSyncConfig();
+  } catch (e) {
+    logger.fatal({ err: serializeError(e) }, "Configuración inválida; abortando sync");
+    process.exit(1);
+  }
+
   const sapService = new SapService();
   const databaseService = new DatabaseService();
+  const started = Date.now();
 
   try {
     logger.info("Inicio de sincronización SAP -> SQL");
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(config.syncErdatFrom)) {
-      throw new Error(
-        "SYNC_ERDAT_FROM es obligatorio y debe ser YYYY-MM-DD (fecha inicial ERDAT en SAP)."
-      );
-    }
 
     const hasta = todayYyyyMmDdUtc();
     logger.info(
@@ -97,20 +101,32 @@ const runSync = async (): Promise<void> => {
     }
 
     logger.info(
-      { totalProcessed: processed, table: config.syncTable },
+      {
+        totalProcessed: processed,
+        table: config.syncTable,
+        durationMs: Date.now() - started
+      },
       "Sincronización finalizada con éxito"
     );
   } catch (error) {
-    logger.error({ error }, "Error durante la sincronización");
+    logger.error(
+      { err: serializeError(error) },
+      "Error durante la sincronización"
+    );
     process.exitCode = 1;
   } finally {
     try {
       await databaseService.close();
     } catch (closeError) {
-      logger.error({ closeError }, "Error cerrando conexión de base de datos");
+      logger.error(
+        { err: serializeError(closeError) },
+        "Error cerrando conexión de base de datos"
+      );
       process.exitCode = 1;
     }
   }
 };
 
-void runSync();
+void runSync().finally(() => {
+  process.exit(process.exitCode ?? 0);
+});

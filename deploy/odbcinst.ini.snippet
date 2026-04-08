@@ -1,9 +1,0 @@
-# Añadir al FINAL de /etc/odbcinst.ini (o crear secciones si el archivo está vacío).
-# Tras instalar: sudo apt install -y tdsodbc freetds-bin freetds-common
-#
-# Comprueba la ruta del .so:
-#   dpkg -L tdsodbc | grep '\.so'
-
-[FreeTDS]
-Description=FreeTDS Driver for Sybase / MS SQL
-Driver=/usr/lib/x86_64-linux-gnu/odbc/libtdsodbc.so
