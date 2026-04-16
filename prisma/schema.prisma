@@ -52,3 +52,53 @@ model SapOrdenProduccionLine {
   @@index([estatusBreve], map: "ix_sap_ord_line_estatus_breve")
   @@map("ordenes_produccion")
 }
+
+model FactProduccion {
+  factProduccionId String    @id @map("fact_produccion_id") @db.VarChar(140)
+  ordenId          String    @map("orden_id") @db.VarChar(24)
+  centroId         String?   @map("centro_id") @db.VarChar(12)
+  productoDesc     String?   @map("producto_desc") @db.VarChar(200)
+  fechaCreacion    DateTime? @map("fecha_creacion") @db.Date
+  fechaInicioPlan  DateTime? @map("fecha_inicio_plan") @db.Date
+  fechaFinPlan     DateTime? @map("fecha_fin_plan") @db.Date
+  fechaFinReal     DateTime? @map("fecha_fin_real") @db.Date
+  cantPlanificada  Decimal?  @map("cant_planificada") @db.Decimal(18, 3)
+  cantReal         Decimal?  @map("cant_real") @db.Decimal(18, 3)
+  unidadMedida     String?   @map("unidad_medida") @db.VarChar(12)
+  syncedAt         DateTime  @default(now()) @map("synced_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([ordenId], map: "ix_fact_produccion_orden_id")
+  @@index([fechaFinReal], map: "ix_fact_produccion_fecha_fin_real")
+  @@index([centroId], map: "ix_fact_produccion_centro_id")
+  @@map("fact_produccion")
+}
+
+model FactConsumos {
+  factConsumoId      String    @id @map("fact_consumo_id") @db.VarChar(180)
+  ordenId            String    @map("orden_id") @db.VarChar(24)
+  componenteDesc     String?   @map("componente_desc") @db.VarChar(200)
+  cantNecesaria      Decimal?  @map("cant_necesaria") @db.Decimal(18, 3)
+  cantConsumidaReal  Decimal?  @map("cant_consumida_real") @db.Decimal(18, 3)
+  unidadMedida       String?   @map("unidad_medida") @db.VarChar(12)
+  desviacionMaterial Decimal?  @map("desviacion_material") @db.Decimal(18, 3)
+  syncedAt           DateTime  @default(now()) @map("synced_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  @@index([ordenId], map: "ix_fact_consumos_orden_id")
+  @@index([desviacionMaterial], map: "ix_fact_consumos_desviacion")
+  @@map("fact_consumos")
+}
+
+model DimOrdenes {
+  ordenId         String   @id @map("orden_id") @db.VarChar(24)
+  tipoOrdenDesc   String?  @map("tipo_orden_desc") @db.VarChar(120)
+  centroDesc      String?  @map("centro_desc") @db.VarChar(120)
+  estatusActual   String?  @map("estatus_actual") @db.VarChar(120)
+  syncedAt        DateTime @default(now()) @map("synced_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([estatusActual], map: "ix_dim_ordenes_estatus_actual")
+  @@index([centroDesc], map: "ix_dim_ordenes_centro_desc")
+  @@map("dim_ordenes")
+}

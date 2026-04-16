@@ -1,5 +1,11 @@
 import { config } from "../config";
 import {
+  buildDimOrdenesQuery,
+  buildFactConsumosQuery,
+  buildFactProduccionQuery,
+  buildKpiProdCostosQuery,
+  buildKpiProdEficienciaQuery,
+  buildKpiProdLogisticaQuery,
   buildOrdenesProduccionRangoQuery,
   SYBASE_QUERIES
 } from "../queries/sybase.queries";
@@ -8,6 +14,79 @@ import { logger } from "../utils/logger";
 export type SapRecord = Record<string, unknown>;
 
 export class SapService {
+  public async fetchDimOrdenes(from: string): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildDimOrdenesQuery(fromDateSap);
+
+    logger.info(
+      { from, fromDateSap },
+      "Consultando DIM_ORDENES por fecha de creación en SAP Sybase"
+    );
+
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchFactConsumos(): Promise<SapRecord[]> {
+    const query = buildFactConsumosQuery();
+
+    logger.info("Consultando FACT_CONSUMOS en SAP Sybase");
+
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchFactProduccion(from: string): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildFactProduccionQuery(fromDateSap);
+
+    logger.info(
+      { from, fromDateSap },
+      "Consultando FACT_PRODUCCION por fecha de creación en SAP Sybase"
+    );
+
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchKpiProdCostos(from: string): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildKpiProdCostosQuery(fromDateSap);
+
+    logger.info(
+      { from, fromDateSap },
+      "Consultando KPI_PROD_COSTOS por fecha de creación en SAP Sybase"
+    );
+
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchKpiProdEficiencia(from: string): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildKpiProdEficienciaQuery(fromDateSap);
+
+    logger.info(
+      { from, fromDateSap },
+      "Consultando KPI_PROD_EFICIENCIA por fecha de trabajo en SAP Sybase"
+    );
+
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchKpiProdLogistica(from: string): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildKpiProdLogisticaQuery(fromDateSap);
+
+    logger.info(
+      { from, fromDateSap },
+      "Consultando KPI_PROD_LOGISTICA por fecha de creacion en SAP Sybase"
+    );
+
+    return this.executeSybaseQuery(query);
+  }
+
   public async fetchOrdenesProduccionByRango(
     from: string,
     to: string,

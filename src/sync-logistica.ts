@@ -3,9 +3,12 @@ import { config } from "./config";
 import { DatabaseService } from "./services/database.service";
 import { SapService } from "./services/sap.service";
 import { logger } from "./utils/logger";
-import { mapSapOrdenRowsToSql } from "./utils/sap-ordenes-sql.mapper";
+import { mapSapLogisticaRowsToSql } from "./utils/sap-logistica-sql.mapper";
 import type { SapRecord } from "./services/sap.service";
 import { serializeError } from "./utils/serialize-error";
+
+const LOGISTICA_TABLE = "kpi_prod_logistica";
+const LOGISTICA_CONFLICT_KEYS = ["orden"];
 
 const chunkArray = <T>(items: T[], batchSize: number): T[][] => {
   const chunks: T[][] = [];
@@ -15,20 +18,27 @@ const chunkArray = <T>(items: T[], batchSize: number): T[][] => {
   return chunks;
 };
 
-/** Fecha actual UTC como YYYY-MM-DD (tope del rango ERDAT en SAP). */
-function todayYyyyMmDdUtc(): string {
-  const d = new Date();
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+const dedupeRowsByConflictKeys = (
+  rows: Record<string, unknown>[],
+  conflictKeys: string[]
+): Record<string, unknown>[] => {
+  const unique = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const key = conflictKeys.map((k) => String(row[k] ?? "")).join("|");
+    // Última ocurrencia gana, evitando colisiones de MERGE por claves repetidas.
+    unique.set(key, row);
+  }
+  return Array.from(unique.values());
+};
 
-const runSync = async (): Promise<void> => {
+const runSyncLogistica = async (): Promise<void> => {
   try {
     assertSyncConfig();
   } catch (e) {
-    logger.fatal({ err: serializeError(e) }, "Configuración inválida; abortando sync");
+    logger.fatal(
+      { err: serializeError(e) },
+      "Configuración inválida; abortando sync logística"
+    );
     process.exit(1);
   }
 
@@ -36,60 +46,65 @@ const runSync = async (): Promise<void> => {
   const databaseService = new DatabaseService();
   const started = Date.now();
   const syncLogId = await databaseService.createSyncLog(
-    config.syncTable,
-    config.syncBatchSize
+    LOGISTICA_TABLE,
+    config.syncLogisticaBatchSize
   );
   let processed = 0;
 
   try {
-    logger.info("Inicio de sincronización SAP -> SQL");
-
-    const hasta = todayYyyyMmDdUtc();
     logger.info(
       {
         desde: config.syncFechaInicio,
-        hasta,
-        werks: config.syncWerks ?? null,
-        tabla: config.syncTable,
-        conflictKeys: config.syncConflictKeys
+        tabla: LOGISTICA_TABLE,
+        conflictKeys: LOGISTICA_CONFLICT_KEYS
       },
-      "Consultando SAP por rango ERDAT hasta hoy (UTC)"
+      "Inicio sincronización KPI_PROD_LOGISTICA"
     );
 
-    const records = await sapService.fetchOrdenesProduccionByRango(
-      config.syncFechaInicio,
-      hasta,
-      config.syncWerks
+    const records = await sapService.fetchKpiProdLogistica(
+      config.syncFechaInicio
     );
     if (records.length === 0) {
-      logger.info("SAP no devolvió filas en el rango");
+      logger.info("KPI_PROD_LOGISTICA: SAP no devolvió filas");
       return;
     }
 
-    const rows = mapSapOrdenRowsToSql(records);
+    const rows = mapSapLogisticaRowsToSql(records);
     if (rows.length === 0) {
       logger.warn(
         { sapRows: records.length },
-        "No se pudo mapear ninguna fila (¿faltan Orden/Posicion?)"
+        "KPI_PROD_LOGISTICA: no se pudo mapear ninguna fila"
       );
       return;
     }
 
-    const batches = chunkArray(rows, config.syncBatchSize);
+    const dedupedRows = dedupeRowsByConflictKeys(
+      rows,
+      LOGISTICA_CONFLICT_KEYS
+    );
+    const duplicatedRows = rows.length - dedupedRows.length;
+    if (duplicatedRows > 0) {
+      logger.warn(
+        { duplicatedRows, conflictKeys: LOGISTICA_CONFLICT_KEYS },
+        "KPI_PROD_LOGISTICA: filas duplicadas detectadas en la corrida; se deduplican antes del upsert"
+      );
+    }
+
+    const batches = chunkArray(dedupedRows, config.syncLogisticaBatchSize);
     logger.info(
       {
-        totalRecords: rows.length,
-        batchSize: config.syncBatchSize,
+        totalRecords: dedupedRows.length,
+        batchSize: config.syncLogisticaBatchSize,
         totalBatches: batches.length
       },
-      "Filas listas para upsert en SQL Server"
+      "KPI_PROD_LOGISTICA: filas listas para upsert"
     );
 
     for (const [index, batch] of batches.entries()) {
       const count = await databaseService.bulkUpsert(
-        config.syncTable,
+        LOGISTICA_TABLE,
         batch as unknown as SapRecord[],
-        config.syncConflictKeys
+        LOGISTICA_CONFLICT_KEYS
       );
       processed += count;
 
@@ -100,17 +115,17 @@ const runSync = async (): Promise<void> => {
           insertedOrUpdated: count,
           processed
         },
-        "Lote procesado"
+        "KPI_PROD_LOGISTICA: lote procesado"
       );
     }
 
     logger.info(
       {
         totalProcessed: processed,
-        table: config.syncTable,
+        table: LOGISTICA_TABLE,
         durationMs: Date.now() - started
       },
-      "Sincronización finalizada con éxito"
+      "KPI_PROD_LOGISTICA: sincronización finalizada"
     );
   } catch (error) {
     await databaseService.finishSyncLog(
@@ -121,7 +136,7 @@ const runSync = async (): Promise<void> => {
     );
     logger.error(
       { err: serializeError(error) },
-      "Error durante la sincronización"
+      "KPI_PROD_LOGISTICA: error durante la sincronización"
     );
     process.exitCode = 1;
   } finally {
@@ -140,6 +155,6 @@ const runSync = async (): Promise<void> => {
   }
 };
 
-void runSync().finally(() => {
+void runSyncLogistica().finally(() => {
   process.exit(process.exitCode ?? 0);
 });

@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Sincronización SAP → SQL Server (tabla en SYNC_TABLE del .env).
-# Rango ERDAT: SYNC_FECHA_INICIO → hoy UTC (variable global, dotenv en Node).
+# Sincronización FACT_PRODUCCION → SQL Server (tabla fact_produccion).
 set -euo pipefail
 
 readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly LOG_DIR="${PROJECT_ROOT}/logs"
-readonly LOCK_FILE="/tmp/sap-ordenes-sync.lock"
+readonly LOCK_FILE="/tmp/sap-fact-produccion-sync.lock"
 
 mkdir -p "$LOG_DIR"
 
@@ -39,10 +38,10 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-log "Inicio job cron: $(command -v node) $(node -v)"
+log "Inicio job cron FACT_PRODUCCION: $(command -v node) $(node -v)"
 
-if [[ ! -f "${PROJECT_ROOT}/dist/sync.js" ]]; then
-  log "Aviso: no hay dist/; ejecutando npm run build…"
+if [[ ! -f "${PROJECT_ROOT}/dist/sync-fact-produccion.js" ]]; then
+  log "Aviso: no hay dist/sync-fact-produccion.js; ejecutando npm run build…"
   npm run build || {
     log "ERROR: npm run build falló"
     exit 1
@@ -52,10 +51,11 @@ fi
 if command -v flock >/dev/null 2>&1; then
   exec 9>"${LOCK_FILE}"
   if ! flock -n 9; then
-    log "Omitido: otra sincronización en curso (lock ${LOCK_FILE})"
+    log "Omitido: otra sincronización FACT_PRODUCCION en curso (lock ${LOCK_FILE})"
     exit 0
   fi
 fi
 
-node "${PROJECT_ROOT}/dist/sync.js"
-log "Sync finalizado OK"
+node "${PROJECT_ROOT}/dist/sync-fact-produccion.js"
+log "FACT_PRODUCCION: sync finalizado OK"
+

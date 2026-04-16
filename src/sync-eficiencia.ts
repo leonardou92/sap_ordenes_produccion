@@ -3,9 +3,12 @@ import { config } from "./config";
 import { DatabaseService } from "./services/database.service";
 import { SapService } from "./services/sap.service";
 import { logger } from "./utils/logger";
-import { mapSapOrdenRowsToSql } from "./utils/sap-ordenes-sql.mapper";
+import { mapSapEficienciaRowsToSql } from "./utils/sap-eficiencia-sql.mapper";
 import type { SapRecord } from "./services/sap.service";
 import { serializeError } from "./utils/serialize-error";
+
+const EFICIENCIA_TABLE = "kpi_prod_eficiencia";
+const EFICIENCIA_CONFLICT_KEYS = ["kpi_eficiencia_id"];
 
 const chunkArray = <T>(items: T[], batchSize: number): T[][] => {
   const chunks: T[][] = [];
@@ -15,20 +18,26 @@ const chunkArray = <T>(items: T[], batchSize: number): T[][] => {
   return chunks;
 };
 
-/** Fecha actual UTC como YYYY-MM-DD (tope del rango ERDAT en SAP). */
-function todayYyyyMmDdUtc(): string {
-  const d = new Date();
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+const dedupeRowsByConflictKeys = (
+  rows: Record<string, unknown>[],
+  conflictKeys: string[]
+): Record<string, unknown>[] => {
+  const unique = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const key = conflictKeys.map((k) => String(row[k] ?? "")).join("|");
+    unique.set(key, row);
+  }
+  return Array.from(unique.values());
+};
 
-const runSync = async (): Promise<void> => {
+const runSyncEficiencia = async (): Promise<void> => {
   try {
     assertSyncConfig();
   } catch (e) {
-    logger.fatal({ err: serializeError(e) }, "Configuración inválida; abortando sync");
+    logger.fatal(
+      { err: serializeError(e) },
+      "Configuración inválida; abortando sync eficiencia"
+    );
     process.exit(1);
   }
 
@@ -36,60 +45,60 @@ const runSync = async (): Promise<void> => {
   const databaseService = new DatabaseService();
   const started = Date.now();
   const syncLogId = await databaseService.createSyncLog(
-    config.syncTable,
-    config.syncBatchSize
+    EFICIENCIA_TABLE,
+    config.syncEficienciaBatchSize
   );
   let processed = 0;
 
   try {
-    logger.info("Inicio de sincronización SAP -> SQL");
-
-    const hasta = todayYyyyMmDdUtc();
     logger.info(
       {
         desde: config.syncFechaInicio,
-        hasta,
-        werks: config.syncWerks ?? null,
-        tabla: config.syncTable,
-        conflictKeys: config.syncConflictKeys
+        tabla: EFICIENCIA_TABLE,
+        conflictKeys: EFICIENCIA_CONFLICT_KEYS
       },
-      "Consultando SAP por rango ERDAT hasta hoy (UTC)"
+      "Inicio sincronización KPI_PROD_EFICIENCIA"
     );
 
-    const records = await sapService.fetchOrdenesProduccionByRango(
-      config.syncFechaInicio,
-      hasta,
-      config.syncWerks
-    );
+    const records = await sapService.fetchKpiProdEficiencia(config.syncFechaInicio);
     if (records.length === 0) {
-      logger.info("SAP no devolvió filas en el rango");
+      logger.info("KPI_PROD_EFICIENCIA: SAP no devolvió filas");
       return;
     }
 
-    const rows = mapSapOrdenRowsToSql(records);
+    const rows = mapSapEficienciaRowsToSql(records);
     if (rows.length === 0) {
       logger.warn(
         { sapRows: records.length },
-        "No se pudo mapear ninguna fila (¿faltan Orden/Posicion?)"
+        "KPI_PROD_EFICIENCIA: no se pudo mapear ninguna fila"
       );
       return;
     }
 
-    const batches = chunkArray(rows, config.syncBatchSize);
+    const dedupedRows = dedupeRowsByConflictKeys(rows, EFICIENCIA_CONFLICT_KEYS);
+    const duplicatedRows = rows.length - dedupedRows.length;
+    if (duplicatedRows > 0) {
+      logger.warn(
+        { duplicatedRows, conflictKeys: EFICIENCIA_CONFLICT_KEYS },
+        "KPI_PROD_EFICIENCIA: filas duplicadas detectadas en la corrida; se deduplican antes del upsert"
+      );
+    }
+
+    const batches = chunkArray(dedupedRows, config.syncEficienciaBatchSize);
     logger.info(
       {
-        totalRecords: rows.length,
-        batchSize: config.syncBatchSize,
+        totalRecords: dedupedRows.length,
+        batchSize: config.syncEficienciaBatchSize,
         totalBatches: batches.length
       },
-      "Filas listas para upsert en SQL Server"
+      "KPI_PROD_EFICIENCIA: filas listas para upsert"
     );
 
     for (const [index, batch] of batches.entries()) {
       const count = await databaseService.bulkUpsert(
-        config.syncTable,
+        EFICIENCIA_TABLE,
         batch as unknown as SapRecord[],
-        config.syncConflictKeys
+        EFICIENCIA_CONFLICT_KEYS
       );
       processed += count;
 
@@ -100,17 +109,17 @@ const runSync = async (): Promise<void> => {
           insertedOrUpdated: count,
           processed
         },
-        "Lote procesado"
+        "KPI_PROD_EFICIENCIA: lote procesado"
       );
     }
 
     logger.info(
       {
         totalProcessed: processed,
-        table: config.syncTable,
+        table: EFICIENCIA_TABLE,
         durationMs: Date.now() - started
       },
-      "Sincronización finalizada con éxito"
+      "KPI_PROD_EFICIENCIA: sincronización finalizada"
     );
   } catch (error) {
     await databaseService.finishSyncLog(
@@ -121,7 +130,7 @@ const runSync = async (): Promise<void> => {
     );
     logger.error(
       { err: serializeError(error) },
-      "Error durante la sincronización"
+      "KPI_PROD_EFICIENCIA: error durante la sincronización"
     );
     process.exitCode = 1;
   } finally {
@@ -140,6 +149,6 @@ const runSync = async (): Promise<void> => {
   }
 };
 
-void runSync().finally(() => {
+void runSyncEficiencia().finally(() => {
   process.exit(process.exitCode ?? 0);
 });

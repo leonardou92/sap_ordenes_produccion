@@ -1,6 +1,6 @@
 # =============================================================================
 # Crontab: sync SAP → SQL Server (misma lógica que npm run start)
-# ERDAT desde: SYNC_ERDAT_FROM en .env (cada corrida hasta hoy UTC).
+# ERDAT desde: SYNC_FECHA_INICIO en .env (variable global; cada corrida hasta hoy UTC).
 # =============================================================================
 #
 #   chmod +x /ruta/al/repo/scripts/sap-sync-cron.sh
@@ -13,5 +13,5 @@ HOME=/home/TU_USUARIO
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 CRON_TZ=America/Caracas
 
-# Ejemplo: una vez al día 16:37 (4:37 p.m. hora Caracas si CRON_TZ=America/Caracas)
-37 16 * * * /ruta/al/repo/scripts/sap-sync-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1
+# Ejemplo: una vez al día 10:35 a.m. (hora Caracas si CRON_TZ=America/Caracas)
+35 10 * * * /ruta/al/repo/scripts/sap-sync-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1

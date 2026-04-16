@@ -1,0 +1,17 @@
+# =============================================================================
+# Crontab: sync SAP → SQL Server para KPI_PROD_EFICIENCIA
+# Fecha inicial: SYNC_FECHA_INICIO en .env.
+# =============================================================================
+#
+#   chmod +x /ruta/al/repo/scripts/sap-sync-eficiencia-cron.sh
+#   crontab -e
+#
+# Sustituye RUTA_REPO y TU_USUARIO por valores reales.
+
+SHELL=/bin/bash
+HOME=/home/TU_USUARIO
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+CRON_TZ=America/Caracas
+
+# Ejemplo: todos los días 13:20 (1:20 p.m. Caracas)
+20 13 * * * /ruta/al/repo/scripts/sap-sync-eficiencia-cron.sh >> /ruta/al/repo/logs/cron-sync-eficiencia.log 2>&1

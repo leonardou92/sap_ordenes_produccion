@@ -36,7 +36,10 @@ Bloques que debes rellenar (detalle en `.env.example`):
 | Bloque | Propósito |
 |--------|-----------|
 | **App + API** | `PORT`, `LISTEN_HOST` (ej. `0.0.0.0` o `127.0.0.1`), `TRUST_PROXY` (`1`/`true` detrás de Apache/Nginx; `false` si accedes directo al puerto), `API_BASE_PATH`, `LOG_LEVEL`, `NODE_ENV`. |
-| **Sync** | `SYNC_TABLE` (destino en SQL Server, p. ej. `ordenes_produccion`), `SYNC_ERDAT_FROM` (inicio del rango ERDAT SAP `YYYY-MM-DD`; cada corrida llega hasta hoy UTC), `SYNC_WERKS` opcional, `SYNC_BATCH_SIZE`, `SYNC_CONFLICT_KEYS`. |
+| **Sync Órdenes** | `SYNC_TABLE` (destino en SQL Server, p. ej. `ordenes_produccion`), `SYNC_FECHA_INICIO` (**fecha global** de inicio ERDAT `YYYY-MM-DD` para ambos cronjobs), `SYNC_WERKS` opcional, `SYNC_BATCH_SIZE`, `SYNC_CONFLICT_KEYS`. |
+| **Sync Logística (KPI_PROD_LOGISTICA)** | `SYNC_LOGISTICA_BATCH_SIZE` (tabla fija interna: `kpi_prod_logistica`; clave de upsert fija: `orden`). |
+| **Sync Eficiencia (KPI_PROD_EFICIENCIA)** | `SYNC_EFICIENCIA_BATCH_SIZE` (tabla fija interna: `kpi_prod_eficiencia`; clave de upsert fija: `kpi_eficiencia_id`). |
+| **Sync Costos (KPI_PROD_COSTOS)** | `SYNC_COSTOS_BATCH_SIZE` (tabla fija interna: `kpi_prod_costos`; clave de upsert fija: `kpi_costos_id`). |
 | **Sybase ASE** | `SYBASE_CONNECTION_MODE` (`odbc` o `jdbc`), DSN / servidor / puerto / credenciales. El flujo de órdenes por rango usa **siempre** consulta ASE (ver sección ODBC más abajo). |
 | **SQL Server (Knex)** | `DB_*` para el upsert del sync (host, puerto, base, usuario, contraseña, `DB_ENCRYPT`, `DB_TRUST_SERVER_CERTIFICATE`, pool). |
 | **Prisma** | `DATABASE_URL` para `npx prisma migrate deploy` y `prisma generate` (misma instancia SQL Server que suelas usar con Knex). |
@@ -78,7 +81,12 @@ Knex **no** implementa `.onConflict().merge()` en el dialecto `mssql`. El proyec
 
 1. Dar permiso de ejecución: `chmod +x scripts/sap-sync-cron.sh`
 2. Asegurar que el usuario del cron tenga `HOME` correcto (necesario para **nvm**) y, si aplica, `PATH` mínimo.
-3. Instalar crontab con `crontab -e`. Plantilla con placeholders: **`scripts/sap-sync.cron.example`** (sustituye `RUTA_REPO` y `TU_USUARIO`).
+3. Instalar crontab con `crontab -e`. Plantillas con placeholders:
+   - **`scripts/sap-sync.cron.example`** (órdenes de producción)
+   - **`scripts/sap-sync-logistica.cron.example`** (KPI_PROD_LOGISTICA)
+   - **`scripts/sap-sync-eficiencia.cron.example`** (KPI_PROD_EFICIENCIA)
+   - **`scripts/sap-sync-costos.cron.example`** (KPI_PROD_COSTOS)
+   Sustituye `RUTA_REPO` y `TU_USUARIO`.
 
 Incluye normalmente:
 
@@ -87,6 +95,9 @@ Incluye normalmente:
 - `PATH=...` (rutas estándar del sistema)
 - `CRON_TZ=America/Caracas` si quieres fijar la hora en Venezuela aunque cambie la zona del servidor
 - **Una sola** línea de horario, por ejemplo una vez al día a las 4:37 p.m. hora Caracas: minuto `37`, hora `16` → `37 16 * * *` seguido de la **ruta absoluta** a `scripts/sap-sync-cron.sh` y redirección a `logs/cron-sync.log` dentro del repo
+- Para logística usa `scripts/sap-sync-logistica-cron.sh` (ejemplo en `scripts/sap-sync-logistica.cron.example`)
+- Para eficiencia usa `scripts/sap-sync-eficiencia-cron.sh` (ejemplo en `scripts/sap-sync-eficiencia.cron.example`)
+- Para costos usa `scripts/sap-sync-costos-cron.sh` (ejemplo en `scripts/sap-sync-costos.cron.example`)
 
 El script:
 
@@ -105,6 +116,10 @@ La lista canónica y los comentarios están en **`.env.example`** (valores de ej
 - Desarrollo API: `npm run dev:api`
 - Build: `npm run build`
 - Produccion (tras build): `npm run start:api`
+- Sync órdenes manual: `npm run start`
+- Sync logística manual: `npm run start:logistica`
+- Sync eficiencia manual: `npm run start:eficiencia`
+- Sync costos manual: `npm run start:costos`
 
 Al arrancar, la API **valida** variables críticas (SQL Server, Sybase, puerto). El proceso responde a **SIGTERM/SIGINT** cerrando el servidor HTTP de forma ordenada (útil con systemd/Kubernetes).
 

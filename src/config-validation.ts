@@ -12,12 +12,19 @@ function assertSafeIdent(name: string, label: string, errors: string[]): void {
 export function collectSyncConfigErrors(): string[] {
   const errors: string[] = [];
 
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(config.syncErdatFrom)) {
-    errors.push("SYNC_ERDAT_FROM debe ser YYYY-MM-DD (obligatorio para el sync).");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(config.syncFechaInicio)) {
+    errors.push(
+      "SYNC_FECHA_INICIO debe ser YYYY-MM-DD (obligatorio para los sync por cron)."
+    );
   }
 
   if (config.syncBatchSize < 1 || config.syncBatchSize > 20_000) {
     errors.push("SYNC_BATCH_SIZE debe estar entre 1 y 20000.");
+  }
+  if (config.batchSize < 1 || config.batchSize > 20_000) {
+    errors.push(
+      "BATCH_SIZE (lote compartido FACT/DIM) debe estar entre 1 y 20000."
+    );
   }
 
   assertSafeIdent(config.syncTable, "SYNC_TABLE", errors);
@@ -27,7 +34,6 @@ export function collectSyncConfigErrors(): string[] {
   for (const k of config.syncConflictKeys) {
     assertSafeIdent(k, "SYNC_CONFLICT_KEYS", errors);
   }
-
   const { user, password, host, database } = config.db;
   if (!host?.trim()) errors.push("DB_HOST es obligatorio.");
   if (!database?.trim()) errors.push("DB_NAME es obligatorio.");

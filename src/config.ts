@@ -26,10 +26,14 @@ interface AppConfig {
   syncTable: string;
   syncBatchSize: number;
   syncConflictKeys: string[];
-  /** ERDAT desde (YYYY-MM-DD): ventana SAP [desde, hoy UTC] en cada corrida de sync. */
-  syncErdatFrom: string;
+  /** Fecha global de inicio (YYYY-MM-DD) para ambos sync por cron. */
+  syncFechaInicio: string;
   /** Opcional: filtro WERKS (centro), ej. PB00. */
   syncWerks: string | undefined;
+  /** Tamaño de lote compartido para FACT_PRODUCCION / FACT_CONSUMOS / DIM_ORDENES. */
+  batchSize: number;
+  /** Flag único para habilitar/inhabilitar todos los jobs FACT/DIM. */
+  enableSync: boolean;
   sap: {
     sourceMode: SapSourceMode;
     timeoutMs: number;
@@ -130,8 +134,15 @@ export const config: AppConfig = {
     process.env.SYNC_CONFLICT_KEYS,
     "sap_line_id"
   ),
-  syncErdatFrom: (process.env.SYNC_ERDAT_FROM ?? "").trim(),
+  syncFechaInicio: (
+    process.env.SYNC_FECHA_INICIO ??
+    process.env.SYNC_LOGISTICA_ERDAT_FROM ??
+    process.env.SYNC_ERDAT_FROM ??
+    ""
+  ).trim(),
   syncWerks: process.env.SYNC_WERKS?.trim() || undefined,
+  batchSize: parseNumber(process.env.BATCH_SIZE, 500),
+  enableSync: parseBoolean(process.env.ENABLE_SYNC, false),
   sap: {
     sourceMode: (process.env.SAP_SOURCE_MODE as SapSourceMode) ?? "rest",
     timeoutMs: parseNumber(process.env.SAP_TIMEOUT_MS, 30000),

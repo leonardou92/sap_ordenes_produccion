@@ -3,9 +3,12 @@ import { config } from "./config";
 import { DatabaseService } from "./services/database.service";
 import { SapService } from "./services/sap.service";
 import { logger } from "./utils/logger";
-import { mapSapOrdenRowsToSql } from "./utils/sap-ordenes-sql.mapper";
+import { mapSapFactProduccionRowsToSql } from "./utils/sap-fact-produccion-sql.mapper";
 import type { SapRecord } from "./services/sap.service";
 import { serializeError } from "./utils/serialize-error";
+
+const FACT_PRODUCCION_TABLE = "fact_produccion";
+const FACT_PRODUCCION_CONFLICT_KEYS = ["fact_produccion_id"];
 
 const chunkArray = <T>(items: T[], batchSize: number): T[][] => {
   const chunks: T[][] = [];
@@ -15,20 +18,34 @@ const chunkArray = <T>(items: T[], batchSize: number): T[][] => {
   return chunks;
 };
 
-/** Fecha actual UTC como YYYY-MM-DD (tope del rango ERDAT en SAP). */
-function todayYyyyMmDdUtc(): string {
-  const d = new Date();
-  const y = d.getUTCFullYear();
-  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(d.getUTCDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+const dedupeRowsByConflictKeys = (
+  rows: Record<string, unknown>[],
+  conflictKeys: string[]
+): Record<string, unknown>[] => {
+  const unique = new Map<string, Record<string, unknown>>();
+  for (const row of rows) {
+    const key = conflictKeys.map((k) => String(row[k] ?? "")).join("|");
+    unique.set(key, row);
+  }
+  return Array.from(unique.values());
+};
 
-const runSync = async (): Promise<void> => {
+const runSyncFactProduccion = async (): Promise<void> => {
+  if (!config.enableSync) {
+    logger.warn(
+      { enabled: config.enableSync },
+      "FACT_PRODUCCION deshabilitado por configuración (ENABLE_SYNC=false; flag compartido FACT/DIM)"
+    );
+    return;
+  }
+
   try {
     assertSyncConfig();
   } catch (e) {
-    logger.fatal({ err: serializeError(e) }, "Configuración inválida; abortando sync");
+    logger.fatal(
+      { err: serializeError(e) },
+      "Configuración inválida; abortando sync fact_produccion"
+    );
     process.exit(1);
   }
 
@@ -36,60 +53,63 @@ const runSync = async (): Promise<void> => {
   const databaseService = new DatabaseService();
   const started = Date.now();
   const syncLogId = await databaseService.createSyncLog(
-    config.syncTable,
-    config.syncBatchSize
+    FACT_PRODUCCION_TABLE,
+    config.batchSize
   );
   let processed = 0;
 
   try {
-    logger.info("Inicio de sincronización SAP -> SQL");
-
-    const hasta = todayYyyyMmDdUtc();
     logger.info(
       {
         desde: config.syncFechaInicio,
-        hasta,
-        werks: config.syncWerks ?? null,
-        tabla: config.syncTable,
-        conflictKeys: config.syncConflictKeys
+        tabla: FACT_PRODUCCION_TABLE,
+        conflictKeys: FACT_PRODUCCION_CONFLICT_KEYS
       },
-      "Consultando SAP por rango ERDAT hasta hoy (UTC)"
+      "Inicio sincronización FACT_PRODUCCION"
     );
 
-    const records = await sapService.fetchOrdenesProduccionByRango(
-      config.syncFechaInicio,
-      hasta,
-      config.syncWerks
-    );
+    const records = await sapService.fetchFactProduccion(config.syncFechaInicio);
     if (records.length === 0) {
-      logger.info("SAP no devolvió filas en el rango");
+      logger.info("FACT_PRODUCCION: SAP no devolvió filas");
       return;
     }
 
-    const rows = mapSapOrdenRowsToSql(records);
+    const rows = mapSapFactProduccionRowsToSql(records);
     if (rows.length === 0) {
       logger.warn(
         { sapRows: records.length },
-        "No se pudo mapear ninguna fila (¿faltan Orden/Posicion?)"
+        "FACT_PRODUCCION: no se pudo mapear ninguna fila"
       );
       return;
     }
 
-    const batches = chunkArray(rows, config.syncBatchSize);
+    const dedupedRows = dedupeRowsByConflictKeys(
+      rows,
+      FACT_PRODUCCION_CONFLICT_KEYS
+    );
+    const duplicatedRows = rows.length - dedupedRows.length;
+    if (duplicatedRows > 0) {
+      logger.warn(
+        { duplicatedRows, conflictKeys: FACT_PRODUCCION_CONFLICT_KEYS },
+        "FACT_PRODUCCION: filas duplicadas detectadas en la corrida; se deduplican antes del upsert"
+      );
+    }
+
+    const batches = chunkArray(dedupedRows, config.batchSize);
     logger.info(
       {
-        totalRecords: rows.length,
-        batchSize: config.syncBatchSize,
+        totalRecords: dedupedRows.length,
+        batchSize: config.batchSize,
         totalBatches: batches.length
       },
-      "Filas listas para upsert en SQL Server"
+      "FACT_PRODUCCION: filas listas para upsert"
     );
 
     for (const [index, batch] of batches.entries()) {
       const count = await databaseService.bulkUpsert(
-        config.syncTable,
+        FACT_PRODUCCION_TABLE,
         batch as unknown as SapRecord[],
-        config.syncConflictKeys
+        FACT_PRODUCCION_CONFLICT_KEYS
       );
       processed += count;
 
@@ -100,17 +120,17 @@ const runSync = async (): Promise<void> => {
           insertedOrUpdated: count,
           processed
         },
-        "Lote procesado"
+        "FACT_PRODUCCION: lote procesado"
       );
     }
 
     logger.info(
       {
         totalProcessed: processed,
-        table: config.syncTable,
+        table: FACT_PRODUCCION_TABLE,
         durationMs: Date.now() - started
       },
-      "Sincronización finalizada con éxito"
+      "FACT_PRODUCCION: sincronización finalizada"
     );
   } catch (error) {
     await databaseService.finishSyncLog(
@@ -121,7 +141,7 @@ const runSync = async (): Promise<void> => {
     );
     logger.error(
       { err: serializeError(error) },
-      "Error durante la sincronización"
+      "FACT_PRODUCCION: error durante la sincronización"
     );
     process.exitCode = 1;
   } finally {
@@ -140,6 +160,6 @@ const runSync = async (): Promise<void> => {
   }
 };
 
-void runSync().finally(() => {
+void runSyncFactProduccion().finally(() => {
   process.exit(process.exitCode ?? 0);
 });

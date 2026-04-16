@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
-# Sincronización SAP → SQL Server (tabla en SYNC_TABLE del .env).
-# Rango ERDAT: SYNC_FECHA_INICIO → hoy UTC (variable global, dotenv en Node).
+# Sincronización FACT_CONSUMOS → SQL Server (tabla fact_consumos).
 set -euo pipefail
 
 readonly PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly LOG_DIR="${PROJECT_ROOT}/logs"
-readonly LOCK_FILE="/tmp/sap-ordenes-sync.lock"
+readonly LOCK_FILE="/tmp/sap-fact-consumos-sync.lock"
 
 mkdir -p "$LOG_DIR"
 
@@ -39,23 +38,16 @@ if ! command -v node >/dev/null 2>&1; then
   exit 1
 fi
 
-log "Inicio job cron: $(command -v node) $(node -v)"
-
-if [[ ! -f "${PROJECT_ROOT}/dist/sync.js" ]]; then
-  log "Aviso: no hay dist/; ejecutando npm run build…"
-  npm run build || {
-    log "ERROR: npm run build falló"
-    exit 1
-  }
-fi
+log "Inicio job cron FACT_CONSUMOS: $(command -v node) $(node -v)"
 
 if command -v flock >/dev/null 2>&1; then
   exec 9>"${LOCK_FILE}"
   if ! flock -n 9; then
-    log "Omitido: otra sincronización en curso (lock ${LOCK_FILE})"
+    log "Omitido: otra sincronización FACT_CONSUMOS en curso (lock ${LOCK_FILE})"
     exit 0
   fi
 fi
 
-node "${PROJECT_ROOT}/dist/sync.js"
-log "Sync finalizado OK"
+npm run dev:fact-consumos
+log "FACT_CONSUMOS: sync finalizado OK"
+

@@ -12,6 +12,17 @@ const assertSafeSqlIdentifier = (name: string, label: string): void => {
 
 export class DatabaseService {
   private readonly db: Knex;
+  private static readonly SYNC_LOG_ERROR_MAX_LENGTH = 1000;
+
+  private static compactSqlErrorMessage(errorMessage: string): string {
+    const normalized = errorMessage.replace(/\s+/g, " ").trim();
+    // Knex/mssql suele devolver "<SQL enorme> - <causa real>"; nos quedamos con la causa.
+    const separator = " - ";
+    const idx = normalized.lastIndexOf(separator);
+    if (idx === -1) return normalized;
+    const cause = normalized.slice(idx + separator.length).trim();
+    return cause || normalized;
+  }
 
   constructor() {
     const baseConnection = {
@@ -67,7 +78,12 @@ export class DatabaseService {
     } catch (error) {
       logger.error(
         {
-          err: serializeError(error),
+          err: {
+            ...serializeError(error),
+            message: DatabaseService.compactSqlErrorMessage(
+              serializeError(error).message
+            )
+          },
           tableName,
           conflictKeys,
           rows: rows.length
@@ -75,6 +91,93 @@ export class DatabaseService {
         "Error al ejecutar bulk upsert"
       );
       throw error;
+    }
+  }
+
+  public async createSyncLog(
+    targetTable: string,
+    batchSize: number
+  ): Promise<number | null> {
+    try {
+      const row = {
+        source: "SAP",
+        targetTable,
+        batchSize,
+        totalProcessed: 0,
+        status: "running",
+        startedAt: new Date()
+      };
+
+      if (config.db.client === "mssql") {
+        const result = await this.db("sync_logs")
+          .insert(row, ["id"])
+          .catch(async () => {
+            const raw = await this.db.raw(`
+              INSERT INTO [sync_logs] ([source], [targetTable], [batchSize], [totalProcessed], [status], [startedAt])
+              OUTPUT INSERTED.[id]
+              VALUES (N'SAP', N'${targetTable.replace(/'/g, "''")}', ${batchSize}, 0, N'running', SYSDATETIME());
+            `);
+            const fromRaw = (raw as any)?.recordset?.[0]?.id;
+            return fromRaw ? [{ id: fromRaw }] : [];
+          });
+        const inserted = Array.isArray(result)
+          ? result[0]
+          : (result as unknown as { id?: number }[])[0];
+        return inserted?.id ?? null;
+      }
+
+      const result = await this.db("sync_logs").insert(row, ["id"]);
+      return (result[0] as { id?: number })?.id ?? null;
+    } catch (error) {
+      logger.warn(
+        { err: serializeError(error), targetTable, batchSize },
+        "No se pudo crear registro en sync_logs"
+      );
+      return null;
+    }
+  }
+
+  public async finishSyncLog(
+    id: number | null,
+    status: "success" | "error",
+    totalProcessed: number,
+    errorMessage?: string
+  ): Promise<void> {
+    if (!id) return;
+    try {
+      const normalizedErrorMessage = (() => {
+        if (!errorMessage) return null;
+        const value = DatabaseService.compactSqlErrorMessage(errorMessage);
+        if (value.length <= DatabaseService.SYNC_LOG_ERROR_MAX_LENGTH) {
+          return value;
+        }
+        // Conserva inicio y final para no perder la causa al final del mensaje.
+        const marker = " … [truncado] … ";
+        const available =
+          DatabaseService.SYNC_LOG_ERROR_MAX_LENGTH - marker.length;
+        const head = Math.floor(available * 0.55);
+        const tail = available - head;
+        return `${value.slice(0, head)}${marker}${value.slice(-tail)}`;
+      })();
+
+      await this.db("sync_logs")
+        .where({ id })
+        .update({
+          status,
+          totalProcessed,
+          errorMessage: normalizedErrorMessage,
+          finishedAt: new Date()
+        });
+    } catch (error) {
+      logger.warn(
+        {
+          err: serializeError(error),
+          id,
+          status,
+          totalProcessed
+        },
+        "No se pudo actualizar registro en sync_logs"
+      );
     }
   }
 
