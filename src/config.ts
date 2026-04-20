@@ -24,6 +24,8 @@ interface AppConfig {
   /** GET consulta SAP por rango `.../api/ordenes-produccion`. `false` = ruta no registrada. */
   enableOrdenesConsultaApi: boolean;
   syncTable: string;
+  /** Texto en `sync_logs.targetTable` para el job de órdenes (por defecto = SYNC_TABLE). */
+  syncLogTargetTable: string;
   syncBatchSize: number;
   syncConflictKeys: string[];
   /** Fecha global de inicio (YYYY-MM-DD) para ambos sync por cron. */
@@ -129,6 +131,11 @@ export const config: AppConfig = {
   ),
   syncTable:
     process.env.SYNC_TABLE ?? "ordenes_produccion",
+  syncLogTargetTable: (
+    process.env.SYNC_LOG_TARGET_TABLE?.trim() ||
+    process.env.SYNC_TABLE?.trim() ||
+    "ordenes_produccion"
+  ).trim(),
   syncBatchSize: parseNumber(process.env.SYNC_BATCH_SIZE, 500),
   syncConflictKeys: parseConflictKeys(
     process.env.SYNC_CONFLICT_KEYS,

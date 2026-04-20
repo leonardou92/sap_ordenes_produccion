@@ -1,8 +1,13 @@
 import { config } from "../config";
 import {
+  buildDimPlantasQuery,
   buildDimOrdenesQuery,
   buildFactConsumosQuery,
+  buildFactMaterialesEmpaqueQuery,
+  buildFactProduccionDetalleReporteQuery,
   buildFactProduccionQuery,
+  buildFactProduccionResumenQuery,
+  buildFactRecepcionCamionesQuery,
   buildKpiProdCostosQuery,
   buildKpiProdEficienciaQuery,
   buildKpiProdLogisticaQuery,
@@ -14,6 +19,14 @@ import { logger } from "../utils/logger";
 export type SapRecord = Record<string, unknown>;
 
 export class SapService {
+  public async fetchDimPlantas(): Promise<SapRecord[]> {
+    const query = buildDimPlantasQuery();
+
+    logger.info("Consultando DIM_PLANTAS (T001W) en SAP Sybase");
+
+    return this.executeSybaseQuery(query);
+  }
+
   public async fetchDimOrdenes(from: string): Promise<SapRecord[]> {
     const fromDate = this.parseInputDate(from);
     const fromDateSap = this.toSapDate(fromDate);
@@ -45,6 +58,52 @@ export class SapService {
       "Consultando FACT_PRODUCCION por fecha de creación en SAP Sybase"
     );
 
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchFactProduccionResumen(from: string): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildFactProduccionResumenQuery(fromDateSap);
+    logger.info(
+      { from, fromDateSap },
+      "Consultando FACT_PRODUCCION_RESUMEN (reporte diario) en SAP Sybase"
+    );
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchFactRecepcionCamiones(from: string): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildFactRecepcionCamionesQuery(fromDateSap);
+    logger.info(
+      { from, fromDateSap },
+      "Consultando FACT_RECEPCION_CAMIONES en SAP Sybase"
+    );
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchFactProduccionDetalleReporte(
+    from: string
+  ): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildFactProduccionDetalleReporteQuery(fromDateSap);
+    logger.info(
+      { from, fromDateSap },
+      "Consultando FACT_PRODUCCION_DETALLE_REPORTE en SAP Sybase"
+    );
+    return this.executeSybaseQuery(query);
+  }
+
+  public async fetchFactMaterialesEmpaque(from: string): Promise<SapRecord[]> {
+    const fromDate = this.parseInputDate(from);
+    const fromDateSap = this.toSapDate(fromDate);
+    const query = buildFactMaterialesEmpaqueQuery(fromDateSap);
+    logger.info(
+      { from, fromDateSap },
+      "Consultando FACT_MATERIALES_EMPAQUE en SAP Sybase"
+    );
     return this.executeSybaseQuery(query);
   }
 

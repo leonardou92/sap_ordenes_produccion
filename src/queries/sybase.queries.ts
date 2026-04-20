@@ -211,3 +211,93 @@ WHERE A.ERDAT >= '${fromDateSap}'
       AND J2.INACT = ''
   )
 `;
+
+/** Catálogo de plantas (T001W) para plantas PB. */
+export const buildDimPlantasQuery = (): string => `
+SELECT
+    p.WERKS AS "Codigo_Planta",
+    p.NAME1 AS "Nombre_Planta",
+    p.BWKEY AS "Centro_Valoracion",
+    p.ORT01 AS "Ciudad",
+    p.LAND1 AS "Pais"
+FROM SAPSR3.T001W p
+WHERE p.WERKS LIKE 'PB%'
+`;
+
+/** Reporte diario: resumen por planta y fecha (GSTRI). Filtro desde fecha SAP YYYYMMDD. */
+export const buildFactProduccionResumenQuery = (fromDateSap: string): string => `
+SELECT
+    CONVERT(DATE, A.GSTRI, 112) AS "Fecha",
+    O.WERKS AS "Codigo_Planta",
+    W.NAME1 AS "Nombre_Planta",
+    CAST(SUM(A.GAMNG) / 2.35 AS DECIMAL(18,0)) AS "Aves_Procesadas",
+    CAST(SUM(ISNULL(Prod.KG_Planta, 0)) AS DECIMAL(18,2)) AS "KG_Planta_Total",
+    CAST(SUM(A.GAMNG) AS DECIMAL(18,2)) AS "KG_Granja_Total",
+    CAST(SUM(ISNULL(Prod.KG_Planta, 0)) - SUM(A.GAMNG) AS DECIMAL(18,2)) AS "Dif_KG",
+    CAST(((SUM(ISNULL(Prod.KG_Planta, 0)) - SUM(A.GAMNG)) / NULLIF(SUM(A.GAMNG), 0)) * 100 AS DECIMAL(18,2)) AS "Porcentaje_Merma"
+FROM SAPSR3.AFKO A
+INNER JOIN SAPSR3.AUFK O ON A.AUFNR = O.AUFNR
+LEFT JOIN SAPSR3.T001W W ON O.WERKS = W.WERKS
+LEFT JOIN (
+    SELECT AUFNR, SUM(WEMNG) AS KG_Planta
+    FROM SAPSR3.AFPO
+    WHERE AMEIN IN ('KG', 'KGM') GROUP BY AUFNR
+) Prod ON A.AUFNR = Prod.AUFNR
+WHERE A.GSTRI >= '${fromDateSap}' AND O.WERKS LIKE 'PB%'
+GROUP BY A.GSTRI, O.WERKS, W.NAME1
+`;
+
+/** Recepción por camión / lote (posición 0001). */
+export const buildFactRecepcionCamionesQuery = (fromDateSap: string): string => `
+SELECT
+    CONVERT(DATE, A.GSTRI, 112) AS "Fecha",
+    O.WERKS AS "Codigo_Planta",
+    P.CHARG AS "Placa_Lote",
+    M.MAKTX AS "Granja_Descripcion",
+    CAST(P.PSMNG AS DECIMAL(18,2)) AS "KG_Granja",
+    CAST(P.WEMNG AS DECIMAL(18,2)) AS "KG_Planta",
+    CAST(P.PSMNG / 2.35 AS DECIMAL(18,0)) AS "Aves_Recibidas",
+    CAST(P.WEMNG - P.PSMNG AS DECIMAL(18,2)) AS "Dif_KG"
+FROM SAPSR3.AFPO P
+INNER JOIN SAPSR3.AFKO A ON P.AUFNR = A.AUFNR
+INNER JOIN SAPSR3.AUFK O ON A.AUFNR = O.AUFNR
+INNER JOIN SAPSR3.MAKT M ON P.MATNR = M.MATNR AND M.SPRAS = 'S'
+WHERE A.GSTRI >= '${fromDateSap}'
+  AND P.POSNR = '0001' AND O.WERKS LIKE 'PB%'
+ORDER BY A.GSTRI, P.CHARG
+`;
+
+/** Despiece / productos en KG. */
+export const buildFactProduccionDetalleReporteQuery = (fromDateSap: string): string => `
+SELECT
+    CONVERT(DATE, A.GSTRI, 112) AS "Fecha",
+    O.WERKS AS "Codigo_Planta",
+    P.MATNR AS "Codigo_Producto",
+    M.MAKTX AS "Referencia",
+    CAST(SUM(P.WEMNG) AS DECIMAL(18,2)) AS "KG_Producidos"
+FROM SAPSR3.AFPO P
+INNER JOIN SAPSR3.MAKT M ON P.MATNR = M.MATNR AND M.SPRAS = 'S'
+INNER JOIN SAPSR3.AFKO A ON P.AUFNR = A.AUFNR
+INNER JOIN SAPSR3.AUFK O ON A.AUFNR = O.AUFNR
+WHERE A.GSTRI >= '${fromDateSap}' AND O.WERKS LIKE 'PB%'
+  AND P.AMEIN IN ('KG', 'KGM')
+GROUP BY A.GSTRI, O.WERKS, P.MATNR, M.MAKTX
+`;
+
+/** Materiales de empaque (bolsas, etiquetas, etc.). */
+export const buildFactMaterialesEmpaqueQuery = (fromDateSap: string): string => `
+SELECT
+    CONVERT(DATE, A.GSTRI, 112) AS "Fecha",
+    O.WERKS AS "Codigo_Planta",
+    R.MATNR AS "Codigo_Material",
+    M.MAKTX AS "Descripcion_Material",
+    CAST(SUM(R.ENMNG) AS DECIMAL(18,0)) AS "Cantidad_Consumida",
+    R.MEINS AS "Unidad"
+FROM SAPSR3.RESB R
+INNER JOIN SAPSR3.MAKT M ON R.MATNR = M.MATNR AND M.SPRAS = 'S'
+INNER JOIN SAPSR3.AFKO A ON R.AUFNR = A.AUFNR
+INNER JOIN SAPSR3.AUFK O ON A.AUFNR = O.AUFNR
+WHERE A.GSTRI >= '${fromDateSap}'
+  AND (R.MATNR LIKE '%110%' OR M.MAKTX LIKE '%BOLSA%' OR M.MAKTX LIKE '%ETIQUETA%') AND O.WERKS LIKE 'PB%'
+GROUP BY A.GSTRI, O.WERKS, R.MATNR, M.MAKTX, R.MEINS
+`;

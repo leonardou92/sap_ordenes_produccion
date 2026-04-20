@@ -102,3 +102,82 @@ model DimOrdenes {
   @@index([centroDesc], map: "ix_dim_ordenes_centro_desc")
   @@map("dim_ordenes")
 }
+
+/// Catálogo de plantas SAP (T001W) filtradas por WERKS LIKE 'PB%'.
+model DimPlantas {
+  codigoPlanta      String   @id @map("codigo_planta") @db.VarChar(12)
+  nombrePlanta      String?  @map("nombre_planta") @db.VarChar(120)
+  sociedadCodigo    String?  @map("sociedad_codigo") @db.VarChar(12)
+  centroValoracion  String?  @map("centro_valoracion") @db.VarChar(12)
+  ciudad            String?  @map("ciudad") @db.VarChar(80)
+  pais              String?  @map("pais") @db.VarChar(6)
+  syncedAt          DateTime @default(now()) @map("synced_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([nombrePlanta], map: "ix_dim_plantas_nombre")
+  @@index([sociedadCodigo], map: "ix_dim_plantas_sociedad")
+  @@map("dim_plantas")
+}
+
+/// Reporte central: aves estimadas y mermas por planta y día (GSTRI).
+model FactProduccionResumen {
+  fecha             DateTime @map("fecha") @db.Date
+  codigoPlanta      String   @map("codigo_planta") @db.VarChar(12)
+  nombrePlanta      String?  @map("nombre_planta") @db.VarChar(120)
+  avesProcesadas    Decimal? @map("aves_procesadas") @db.Decimal(18, 0)
+  kgPlantaTotal     Decimal? @map("kg_planta_total") @db.Decimal(18, 2)
+  kgGranjaTotal     Decimal? @map("kg_granja_total") @db.Decimal(18, 2)
+  difKg             Decimal? @map("dif_kg") @db.Decimal(18, 2)
+  porcentajeMerma   Decimal? @map("porcentaje_merma") @db.Decimal(18, 2)
+  syncedAt          DateTime @default(now()) @map("synced_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@id([fecha, codigoPlanta])
+  @@map("fact_produccion_resumen")
+}
+
+/// Recepción por camión / lote (AFPO pos. 0001).
+model FactRecepcionCamiones {
+  fecha               DateTime @map("fecha") @db.Date
+  codigoPlanta        String   @map("codigo_planta") @db.VarChar(12)
+  placaLote           String   @map("placa_lote") @db.VarChar(40)
+  granjaDescripcion   String?  @map("granja_descripcion") @db.VarChar(200)
+  kgGranja            Decimal? @map("kg_granja") @db.Decimal(18, 2)
+  kgPlanta            Decimal? @map("kg_planta") @db.Decimal(18, 2)
+  avesRecibidas       Decimal? @map("aves_recibidas") @db.Decimal(18, 0)
+  difKg               Decimal? @map("dif_kg") @db.Decimal(18, 2)
+  syncedAt            DateTime @default(now()) @map("synced_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@id([fecha, codigoPlanta, placaLote])
+  @@map("fact_recepcion_camiones")
+}
+
+/// Despiece por producto (KG).
+model FactProduccionDetalleReporte {
+  fecha           DateTime @map("fecha") @db.Date
+  codigoPlanta    String   @map("codigo_planta") @db.VarChar(12)
+  codigoProducto  String   @map("codigo_producto") @db.VarChar(40)
+  referencia      String?  @map("referencia") @db.VarChar(200)
+  kgProducidos    Decimal? @map("kg_producidos") @db.Decimal(18, 2)
+  syncedAt        DateTime @default(now()) @map("synced_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@id([fecha, codigoPlanta, codigoProducto])
+  @@map("fact_produccion_detalle_reporte")
+}
+
+/// Consumo de materiales de empaque (RESB filtrado).
+model FactMaterialesEmpaque {
+  fecha                 DateTime @map("fecha") @db.Date
+  codigoPlanta          String   @map("codigo_planta") @db.VarChar(12)
+  codigoMaterial        String   @map("codigo_material") @db.VarChar(40)
+  descripcionMaterial   String?  @map("descripcion_material") @db.VarChar(200)
+  cantidadConsumida     Decimal? @map("cantidad_consumida") @db.Decimal(18, 0)
+  unidad                String   @map("unidad") @db.VarChar(12)
+  syncedAt              DateTime @default(now()) @map("synced_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@id([fecha, codigoPlanta, codigoMaterial, unidad])
+  @@map("fact_materiales_empaque")
+}

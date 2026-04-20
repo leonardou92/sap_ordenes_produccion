@@ -1,9 +1,9 @@
 # =============================================================================
-# Crontab: sync SAP → SQL Server (misma lógica que npm run start)
-# ERDAT desde: SYNC_FECHA_INICIO en .env (variable global; cada corrida hasta hoy UTC).
+# Crontab: sync SAP → SQL Server
+# sync_logs.targetTable distingue jobs: OP_ordenes_produccion vs PB_reporte_* (4 reportes).
 # =============================================================================
 #
-#   chmod +x /ruta/al/repo/scripts/sap-sync-cron.sh
+#   chmod +x /ruta/al/repo/scripts/sap-sync-*.sh
 #   crontab -e
 #
 # Sustituye RUTA_REPO y TU_USUARIO por valores reales.
@@ -13,5 +13,13 @@ HOME=/home/TU_USUARIO
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 CRON_TZ=America/Caracas
 
-# Ejemplo: una vez al día 10:35 a.m. (hora Caracas si CRON_TZ=America/Caracas)
-35 10 * * * /ruta/al/repo/scripts/sap-sync-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1
+# Ejemplo 1:56 p.m. hora Caracas — 6 líneas (órd. + dim_plantas + 4 reportes por separado)
+56 13 * * * /ruta/al/repo/scripts/sap-sync-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1
+56 13 * * * /ruta/al/repo/scripts/sap-sync-dim-plantas-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1
+56 13 * * * /ruta/al/repo/scripts/sap-sync-fact-produccion-resumen-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1
+56 13 * * * /ruta/al/repo/scripts/sap-sync-fact-recepcion-camiones-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1
+56 13 * * * /ruta/al/repo/scripts/sap-sync-fact-produccion-detalle-reporte-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1
+56 13 * * * /ruta/al/repo/scripts/sap-sync-fact-materiales-empaque-cron.sh >> /ruta/al/repo/logs/cron-sync.log 2>&1
+
+# Logs por reporte (scripts *-cron): logs/reporte_pb_*.log
+# Alternativa: solo /scripts/sap-sync-reportes-diario-cron.sh (ejecuta los 4 en serie; mismo sync_logs PB_reporte_*)

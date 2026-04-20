@@ -36,7 +36,7 @@ const runSync = async (): Promise<void> => {
   const databaseService = new DatabaseService();
   const started = Date.now();
   const syncLogId = await databaseService.createSyncLog(
-    config.syncTable,
+    config.syncLogTargetTable,
     config.syncBatchSize
   );
   let processed = 0;
